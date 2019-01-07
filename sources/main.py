@@ -1,6 +1,15 @@
 import os
+import re
+import string
+from nltk.stem import WordNetLemmatizer
+
+import nltk
+from bs4 import BeautifulSoup
 
 import chardet
+
+nltk.download('punkt')
+nltk.download('wordnet')
 
 
 def load_data(clean_lot_path, spam_lot_path):
@@ -49,5 +58,117 @@ def load_data(clean_lot_path, spam_lot_path):
     return train, test
 
 
+def find_urls(string):
+    url = re.findall('http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', string)
+    return url
+
+
+def pre_process_data(data):
+    # Subject - body split + lowering
+    data["spam"] = list(map(lambda x:
+                                  {
+                                      "id": x["id"],
+                                      "subject": x["content"].split("\n")[0][8:].lower(),
+                                      "body": " ".join(x["content"].split("\n")[1:]).lower()
+                                  }, data["spam"]))
+    data["clean"] = list(map(lambda x:
+                                   {
+                                       "id": x["id"],
+                                       "subject": x["content"].split("\n")[0][8:].lower(),
+                                       "body": " ".join(x["content"].split("\n")[0:]).lower()
+                                   }, data["clean"]))
+
+    # URLs extraction
+    data["spam"] = list(map(lambda x:
+                                  {
+                                      "id": x["id"],
+                                      "subject": x["subject"],
+                                      "body": x["body"],
+                                      "urls": find_urls(x["body"])
+                                  }, data["spam"]))
+    data["clean"] = list(map(lambda x:
+                                   {
+                                       "id": x["id"],
+                                       "subject": x["subject"],
+                                       "body": x["body"],
+                                       "urls": find_urls(x["body"])
+                                   }, data["clean"]))
+
+    # Extract text from HTML if it's the case
+    data["spam"] = list(map(lambda x:
+                                  {
+                                      "id": x["id"],
+                                      "subject": x["subject"],
+                                      "body": BeautifulSoup(x["body"], 'html.parser').get_text(),
+                                      "urls": x["urls"]
+                                  }, data["spam"]))
+    data["clean"] = list(map(lambda x:
+                                   {
+                                       "id": x["id"],
+                                       "subject": x["subject"],
+                                       "body": BeautifulSoup(x["body"], 'html.parser').get_text(),
+                                       "urls": x["urls"]
+                                   }, data["clean"]))
+
+    # Punctuation removal
+    data["spam"] = list(map(lambda x:
+                                  {
+                                      "id": x["id"],
+                                      "subject": re.sub('[' + string.punctuation + ']', ' ', x["subject"]),
+                                      "body": re.sub('[' + string.punctuation + ']', ' ', x["body"]),
+                                      "urls": x["urls"]
+                                  }, data["spam"]))
+    data["clean"] = list(map(lambda x:
+                                   {
+                                       "id": x["id"],
+                                       "subject": re.sub('[' + string.punctuation + ']', ' ', x["subject"]),
+                                       "body": re.sub('[' + string.punctuation + ']', ' ', x["body"]),
+                                       "urls": x["urls"]
+                                   }, data["clean"]))
+
+    # Tokenize
+    data["spam"] = list(map(lambda x:
+                                  {
+                                      "id": x["id"],
+                                      "subject": nltk.word_tokenize(x["subject"]),
+                                      "body": nltk.word_tokenize(x["body"]),
+                                      "urls": x["urls"]
+                                  }, data["spam"]))
+    data["clean"] = list(map(lambda x:
+                                   {
+                                       "id": x["id"],
+                                       "subject": nltk.word_tokenize(x["subject"]),
+                                       "body": nltk.word_tokenize(x["body"]),
+                                       "urls": x["urls"]
+                                   }, data["clean"]))
+    # Lemmatization
+    data["spam"] = list(map(lambda x:
+                                  {
+                                      "id": x["id"],
+                                      "subject": [WordNetLemmatizer().lemmatize(y) for y in x["subject"]],
+                                      "body": [WordNetLemmatizer().lemmatize(y) for y in x["body"]],
+                                      "urls": x["urls"]
+                                  }, data["spam"]))
+    data["clean"] = list(map(lambda x:
+                                   {
+                                       "id": x["id"],
+                                       "subject": [WordNetLemmatizer().lemmatize(y) for y in x["subject"]],
+                                       "body": [WordNetLemmatizer().lemmatize(y) for y in x["body"]],
+                                       "urls": x["urls"]
+                                   }, data["clean"]))
+
+    return data
+
+
+def train_model(train_data):
+    pre_processed_train_data = pre_process_data(train_data)
+
+    return pre_processed_train_data
+
+    # for key, value in train_data.items():
+
+
 if __name__ == '__main__':
-    train_data, test_data = load_data("../data/Lot1/Clean/", "../data/Lot1/Spam/")
+    train_data, test_data = load_data("../data/Lot1-truncated/Clean/", "../data/Lot1-truncated/Spam/")
+
+    model = train_model(train_data)
