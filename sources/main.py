@@ -238,8 +238,8 @@ def test_model(test_data, model):
     recall = TP / (TP + FN)
 
     # Report generation:
-    print("Spams: " + len(pre_processed_test_data["spam"]))
-    print("Clean: " + len(pre_processed_test_data["clean"]))
+    print("Spams: " + str(len(pre_processed_test_data["spam"])))
+    print("Clean: " + str(len(pre_processed_test_data["clean"])))
 
     print("-----------------")
 
