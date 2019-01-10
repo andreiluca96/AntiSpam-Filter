@@ -9,6 +9,9 @@ from bs4 import BeautifulSoup
 from nltk.corpus import stopwords
 
 import chardet
+from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.pipeline import Pipeline
 
 nltk.download('punkt')
 nltk.download('wordnet')
@@ -69,122 +72,141 @@ def find_urls(string):
 def pre_process_data(data):
     # Subject - body split + lowering
     data["spam"] = list(map(lambda x:
-                                  {
-                                      "id": x["id"],
-                                      "subject": x["content"].split("\n")[0][8:].lower(),
-                                      "body": " ".join(x["content"].split("\n")[1:]).lower()
-                                  }, data["spam"]))
+                            {
+                                "id": x["id"],
+                                "subject": x["content"].split("\n")[0][8:].lower(),
+                                "body": " ".join(x["content"].split("\n")[1:]).lower()
+                            }, data["spam"]))
     data["clean"] = list(map(lambda x:
-                                   {
-                                       "id": x["id"],
-                                       "subject": x["content"].split("\n")[0][8:].lower(),
-                                       "body": " ".join(x["content"].split("\n")[0:]).lower()
-                                   }, data["clean"]))
+                             {
+                                 "id": x["id"],
+                                 "subject": x["content"].split("\n")[0][8:].lower(),
+                                 "body": " ".join(x["content"].split("\n")[0:]).lower()
+                             }, data["clean"]))
 
     # URLs extraction
     data["spam"] = list(map(lambda x:
-                                  {
-                                      "id": x["id"],
-                                      "subject": x["subject"],
-                                      "body": x["body"],
-                                      "urls": find_urls(x["body"])
-                                  }, data["spam"]))
+                            {
+                                "id": x["id"],
+                                "subject": x["subject"],
+                                "body": x["body"],
+                                "urls": find_urls(x["body"])
+                            }, data["spam"]))
     data["clean"] = list(map(lambda x:
-                                   {
-                                       "id": x["id"],
-                                       "subject": x["subject"],
-                                       "body": x["body"],
-                                       "urls": find_urls(x["body"])
-                                   }, data["clean"]))
+                             {
+                                 "id": x["id"],
+                                 "subject": x["subject"],
+                                 "body": x["body"],
+                                 "urls": find_urls(x["body"])
+                             }, data["clean"]))
 
     # Extract text from HTML if it's the case
     data["spam"] = list(map(lambda x:
-                                  {
-                                      "id": x["id"],
-                                      "subject": x["subject"],
-                                      "body": BeautifulSoup(x["body"], 'html.parser').get_text(),
-                                      "urls": x["urls"]
-                                  }, data["spam"]))
+                            {
+                                "id": x["id"],
+                                "subject": x["subject"],
+                                "body": BeautifulSoup(x["body"], 'html.parser').get_text(),
+                                "urls": x["urls"]
+                            }, data["spam"]))
     data["clean"] = list(map(lambda x:
-                                   {
-                                       "id": x["id"],
-                                       "subject": x["subject"],
-                                       "body": BeautifulSoup(x["body"], 'html.parser').get_text(),
-                                       "urls": x["urls"]
-                                   }, data["clean"]))
+                             {
+                                 "id": x["id"],
+                                 "subject": x["subject"],
+                                 "body": BeautifulSoup(x["body"], 'html.parser').get_text(),
+                                 "urls": x["urls"]
+                             }, data["clean"]))
 
     # Punctuation removal
     data["spam"] = list(map(lambda x:
-                                  {
-                                      "id": x["id"],
-                                      "subject": re.sub('[' + string.punctuation + ']', ' ', x["subject"]),
-                                      "body": re.sub('[' + string.punctuation + ']', ' ', x["body"]),
-                                      "urls": x["urls"]
-                                  }, data["spam"]))
+                            {
+                                "id": x["id"],
+                                "subject": re.sub('[' + string.punctuation + ']', ' ', x["subject"]),
+                                "body": re.sub('[' + string.punctuation + ']', ' ', x["body"]),
+                                "urls": x["urls"]
+                            }, data["spam"]))
     data["clean"] = list(map(lambda x:
-                                   {
-                                       "id": x["id"],
-                                       "subject": re.sub('[' + string.punctuation + ']', ' ', x["subject"]),
-                                       "body": re.sub('[' + string.punctuation + ']', ' ', x["body"]),
-                                       "urls": x["urls"]
-                                   }, data["clean"]))
+                             {
+                                 "id": x["id"],
+                                 "subject": re.sub('[' + string.punctuation + ']', ' ', x["subject"]),
+                                 "body": re.sub('[' + string.punctuation + ']', ' ', x["body"]),
+                                 "urls": x["urls"]
+                             }, data["clean"]))
 
     # Tokenize
     data["spam"] = list(map(lambda x:
-                                  {
-                                      "id": x["id"],
-                                      "subject": nltk.word_tokenize(x["subject"]),
-                                      "body": nltk.word_tokenize(x["body"]),
-                                      "urls": x["urls"]
-                                  }, data["spam"]))
+                            {
+                                "id": x["id"],
+                                "subject": nltk.word_tokenize(x["subject"]),
+                                "body": nltk.word_tokenize(x["body"]),
+                                "urls": x["urls"]
+                            }, data["spam"]))
     data["clean"] = list(map(lambda x:
-                                   {
-                                       "id": x["id"],
-                                       "subject": nltk.word_tokenize(x["subject"]),
-                                       "body": nltk.word_tokenize(x["body"]),
-                                       "urls": x["urls"]
-                                   }, data["clean"]))
+                             {
+                                 "id": x["id"],
+                                 "subject": nltk.word_tokenize(x["subject"]),
+                                 "body": nltk.word_tokenize(x["body"]),
+                                 "urls": x["urls"]
+                             }, data["clean"]))
     # Lemmatization
     data["spam"] = list(map(lambda x:
-                                  {
-                                      "id": x["id"],
-                                      "subject": [WordNetLemmatizer().lemmatize(y) for y in x["subject"]],
-                                      "body": [WordNetLemmatizer().lemmatize(y) for y in x["body"]],
-                                      "urls": x["urls"]
-                                  }, data["spam"]))
+                            {
+                                "id": x["id"],
+                                "subject": [WordNetLemmatizer().lemmatize(y) for y in x["subject"]],
+                                "body": [WordNetLemmatizer().lemmatize(y) for y in x["body"]],
+                                "urls": x["urls"]
+                            }, data["spam"]))
     data["clean"] = list(map(lambda x:
-                                   {
-                                       "id": x["id"],
-                                       "subject": [WordNetLemmatizer().lemmatize(y) for y in x["subject"]],
-                                       "body": [WordNetLemmatizer().lemmatize(y) for y in x["body"]],
-                                       "urls": x["urls"]
-                                   }, data["clean"]))
+                             {
+                                 "id": x["id"],
+                                 "subject": [WordNetLemmatizer().lemmatize(y) for y in x["subject"]],
+                                 "body": [WordNetLemmatizer().lemmatize(y) for y in x["body"]],
+                                 "urls": x["urls"]
+                             }, data["clean"]))
 
     # Stop words removal
     stop_words = set(stopwords.words('english'))
     data["spam"] = list(map(lambda x:
-                                  {
-                                      "id": x["id"],
-                                      "subject": [y for y in x["subject"] if y not in stop_words],
-                                      "body": [y for y in x["body"] if y not in stop_words],
-                                      "urls": x["urls"]
-                                  }, data["spam"]))
+                            {
+                                "id": x["id"],
+                                "subject": [y for y in x["subject"] if y not in stop_words],
+                                "body": [y for y in x["body"] if y not in stop_words],
+                                "urls": x["urls"]
+                            }, data["spam"]))
     data["clean"] = list(map(lambda x:
-                                   {
-                                       "id": x["id"],
-                                       "subject": [y for y in x["subject"] if y not in stop_words],
-                                       "body": [y for y in x["body"] if y not in stop_words],
-                                       "urls": x["urls"]
-                                   }, data["clean"]))
+                             {
+                                 "id": x["id"],
+                                 "subject": [y for y in x["subject"] if y not in stop_words],
+                                 "body": [y for y in x["body"] if y not in stop_words],
+                                 "urls": x["urls"]
+                             }, data["clean"]))
     return data
 
 
 def train_model(train_data):
     pre_processed_train_data = pre_process_data(train_data)
 
-    return pre_processed_train_data
+    subject_X = ["", ""]
+    body_X = ["", ""]
 
-    # for key, value in train_data.items():
+    for entry in pre_processed_train_data["clean"]:
+        subject_X[0] += " ".join(entry["subject"])
+        body_X[0] += " ".join(entry["body"])
+
+    for entry in pre_processed_train_data["spam"]:
+        subject_X[1] += " ".join(entry["subject"])
+        body_X[1] += " ".join(entry["body"])
+
+    Y = ["clean", "spam"]
+
+    model = Pipeline([
+        ('vect', CountVectorizer(stop_words='english', lowercase=True)),  # pre_processing step
+        ('tfidf', TfidfTransformer(use_idf=True, smooth_idf=True)),  # pre_processing step
+        ('clf', MultinomialNB(alpha=1))  # prediction model
+    ])
+
+    model.fit(subject_X, Y)
+
+    return model
 
 
 if __name__ == '__main__':
