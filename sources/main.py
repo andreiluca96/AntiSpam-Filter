@@ -6,10 +6,13 @@ from nltk.stem import WordNetLemmatizer
 import nltk
 from bs4 import BeautifulSoup
 
+from nltk.corpus import stopwords
+
 import chardet
 
 nltk.download('punkt')
 nltk.download('wordnet')
+nltk.download('stopwords')
 
 
 def load_data(clean_lot_path, spam_lot_path):
@@ -157,6 +160,22 @@ def pre_process_data(data):
                                        "urls": x["urls"]
                                    }, data["clean"]))
 
+    # Stop words removal
+    stop_words = set(stopwords.words('english'))
+    data["spam"] = list(map(lambda x:
+                                  {
+                                      "id": x["id"],
+                                      "subject": [y for y in x["subject"] if y not in stop_words],
+                                      "body": [y for y in x["body"] if y not in stop_words],
+                                      "urls": x["urls"]
+                                  }, data["spam"]))
+    data["clean"] = list(map(lambda x:
+                                   {
+                                       "id": x["id"],
+                                       "subject": [y for y in x["subject"] if y not in stop_words],
+                                       "body": [y for y in x["body"] if y not in stop_words],
+                                       "urls": x["urls"]
+                                   }, data["clean"]))
     return data
 
 
