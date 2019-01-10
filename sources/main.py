@@ -107,14 +107,14 @@ def pre_process_data(data):
                             {
                                 "id": x["id"],
                                 "subject": x["subject"],
-                                "body": BeautifulSoup(x["body"], 'html.parser').get_text(),
+                                "body": getHTMLFromBody(x),
                                 "urls": x["urls"]
                             }, data["spam"]))
     data["clean"] = list(map(lambda x:
                              {
                                  "id": x["id"],
                                  "subject": x["subject"],
-                                 "body": BeautifulSoup(x["body"], 'html.parser').get_text(),
+                                 "body": getHTMLFromBody(x),
                                  "urls": x["urls"]
                              }, data["clean"]))
 
@@ -182,6 +182,14 @@ def pre_process_data(data):
                                  "urls": x["urls"]
                              }, data["clean"]))
     return data
+
+
+def getHTMLFromBody(x):
+    try:
+        return BeautifulSoup(x["body"], 'html.parser').get_text()
+    except:
+        print("Couldn't extract the HTML text from " + x["body"])
+        return x["body"]
 
 
 def train_model(train_data):
@@ -255,7 +263,7 @@ def test_model(test_data, model):
 
 
 if __name__ == '__main__':
-    train_data, test_data = load_data("../data/Lot1/Clean/", "../data/Lot1/Spam/")
+    train_data, test_data = load_data("../data/Lot2/Clean/", "../data/Lot2/Spam/")
 
     model = train_model(train_data)
 
