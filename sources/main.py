@@ -1,6 +1,8 @@
 import os
 import re
 import string
+
+import numpy
 from nltk.stem import WordNetLemmatizer
 
 import nltk
@@ -209,7 +211,52 @@ def train_model(train_data):
     return model
 
 
+def test_model(test_data, model):
+    pre_processed_test_data = pre_process_data(test_data)
+
+    clean_subjects = [" ".join(entry["subject"]) for entry in pre_processed_test_data["clean"]]
+    spam_subjects = [" ".join(entry["subject"]) for entry in pre_processed_test_data["spam"]]
+
+    predicted_clean_subjects = model.predict(clean_subjects)
+    unique, counts = numpy.unique(predicted_clean_subjects, return_counts=True)
+    predicted_clean_subjects_counts = dict(zip(unique, counts))
+
+    predicted_spam_subjects = model.predict(spam_subjects)
+    unique, counts = numpy.unique(predicted_spam_subjects, return_counts=True)
+    predicted_spam_subjects_counts = dict(zip(unique, counts))
+
+    # true positives
+    TP = predicted_spam_subjects_counts["spam"]
+    # false positives
+    FP = predicted_clean_subjects_counts["spam"]
+    # true negatives
+    TN = predicted_clean_subjects_counts["clean"]
+    # false negatives
+    FN = predicted_spam_subjects_counts["clean"]
+
+    precision = TP / (TP + FP)
+    recall = TP / (TP + FN)
+
+    # Report generation:
+    print("Spams: " + len(pre_processed_test_data["spam"]))
+    print("Clean: " + len(pre_processed_test_data["clean"]))
+
+    print("-----------------")
+
+    print("True positives: " + str(TP))
+    print("False positives: " + str(FP))
+    print("True negatives: " + str(TN))
+    print("False negatives: " + str(FN))
+
+    print("-----------------")
+
+    print("Precision: " + str(precision))
+    print("Recall: " + str(recall))
+
+
 if __name__ == '__main__':
-    train_data, test_data = load_data("../data/Lot1-truncated/Clean/", "../data/Lot1-truncated/Spam/")
+    train_data, test_data = load_data("../data/Lot1/Clean/", "../data/Lot1/Spam/")
 
     model = train_model(train_data)
+
+    test_model(test_data, model)
