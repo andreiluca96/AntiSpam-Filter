@@ -14,10 +14,13 @@ import chardet
 from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.pipeline import Pipeline
+from nltk.corpus import words
 
 nltk.download('punkt')
+nltk.download('words')
 nltk.download('wordnet')
 nltk.download('stopwords')
+l = words.words()
 
 
 def load_data(clean_lot_path, spam_lot_path):
@@ -107,14 +110,14 @@ def pre_process_data(data):
                             {
                                 "id": x["id"],
                                 "subject": x["subject"],
-                                "body": getHTMLFromBody(x),
+                                "body": get_HTML_from_body(x),
                                 "urls": x["urls"]
                             }, data["spam"]))
     data["clean"] = list(map(lambda x:
                              {
                                  "id": x["id"],
                                  "subject": x["subject"],
-                                 "body": getHTMLFromBody(x),
+                                 "body": get_HTML_from_body(x),
                                  "urls": x["urls"]
                              }, data["clean"]))
 
@@ -181,10 +184,26 @@ def pre_process_data(data):
                                  "body": [y for y in x["body"] if y not in stop_words],
                                  "urls": x["urls"]
                              }, data["clean"]))
+
+    # URL tokenization
+    data["spam"] = list(map(lambda x:
+                            {
+                                "id": x["id"],
+                                "subject": x["subject"],
+                                "body": x["body"],
+                                "urls": [" ".join(get_URL_tokens(y)) for y in x["urls"]]
+                            }, data["spam"]))
+    data["clean"] = list(map(lambda x:
+                             {
+                                 "id": x["id"],
+                                 "subject": x["subject"],
+                                 "body": x["body"],
+                                 "urls": [" ".join(get_URL_tokens(y)) for y in x["urls"]]
+                             }, data["clean"]))
     return data
 
 
-def getHTMLFromBody(x):
+def get_HTML_from_body(x):
     try:
         return BeautifulSoup(x["body"], 'html.parser').get_text()
     except:
@@ -192,19 +211,43 @@ def getHTMLFromBody(x):
         return x["body"]
 
 
+def get_URL_tokens(input):
+    tokensBySlash = str(input.encode('utf-8')).split('/')  # get tokens after splitting by slash
+    allTokens = []
+    for i in tokensBySlash:
+        tokens = str(i).split('-')  # get tokens after splitting by dash
+        tokensByDot = []
+        for j in range(0, len(tokens)):
+            tempTokens = str(tokens[j]).split('.')  # get tokens after splitting by dot
+            tokensByDot = tokensByDot + tempTokens
+        allTokens = allTokens + tokens + tokensByDot
+    allTokens = list(set(allTokens))  # remove redundant tokens
+    if 'com' in allTokens:
+        allTokens.remove('com')
+    if 'http' in allTokens:
+        allTokens.remove('http')
+    if 'www' in allTokens:
+        allTokens.remove('www')
+    return allTokens
+
+
 def train_model(train_data):
     pre_processed_train_data = pre_process_data(train_data)
 
+    # Body and subject
     subject_X = ["", ""]
     body_X = ["", ""]
+    url_X = ["", ""]
 
     for entry in pre_processed_train_data["clean"]:
         subject_X[0] += " ".join(entry["subject"])
         body_X[0] += " ".join(entry["body"])
+        url_X[0] += " ".join(entry["urls"])
 
     for entry in pre_processed_train_data["spam"]:
         subject_X[1] += " ".join(entry["subject"])
         body_X[1] += " ".join(entry["body"])
+        url_X[1] += " ".join(entry["urls"])
 
     Y = ["clean", "spam"]
 
@@ -220,13 +263,20 @@ def train_model(train_data):
         ('clf', MultinomialNB(alpha=1))  # prediction model
     ])
 
+    url_model = Pipeline([
+        ('vect', CountVectorizer(stop_words='english', lowercase=True)),  # pre_processing step
+        ('tfidf', TfidfTransformer(use_idf=True, smooth_idf=True)),  # pre_processing step
+        ('clf', MultinomialNB(alpha=1))  # prediction model
+    ])
+
     subject_model.fit(subject_X, Y)
     body_model.fit(body_X, Y)
+    url_model.fit(url_X, Y)
 
-    return subject_model, body_model
+    return subject_model, body_model, url_model
 
 
-def test_model(test_data, subject_model, body_model):
+def test_model(test_data, subject_model, body_model, url_model):
     pre_processed_test_data = pre_process_data(test_data)
 
     '''
@@ -262,24 +312,41 @@ def test_model(test_data, subject_model, body_model):
     generate_report(pre_processed_test_data, predicted_clean_bodies_counts, predicted_spam_bodies_counts, "body")
 
     '''
-    Body and Subject combined Classifier
+    URL Classifier
     '''
-    zipped_predicted_clean = list(zip(predicted_clean_subjects, predicted_clean_bodies))
-    zipped_predicted_spam = list(zip(predicted_spam_subjects, predicted_spam_bodies))
+    clean_urls = [" ".join(entry["urls"]) for entry in pre_processed_test_data["clean"]]
+    spam_urls = [" ".join(entry["urls"]) for entry in pre_processed_test_data["spam"]]
 
-    predicted_clean_combined = [make_spam_decision(entry1, entry2) for entry1, entry2 in zipped_predicted_clean]
+    predicted_clean_urls = body_model.predict(clean_urls)
+    unique, counts = numpy.unique(predicted_clean_urls, return_counts=True)
+    predicted_clean_urls_counts = dict(zip(unique, counts))
+
+    predicted_spam_urls = body_model.predict(spam_urls)
+    unique, counts = numpy.unique(predicted_spam_urls, return_counts=True)
+    predicted_spam_urls_counts = dict(zip(unique, counts))
+
+    generate_report(pre_processed_test_data, predicted_clean_urls_counts, predicted_spam_urls_counts, "urls")
+
+    '''
+    Combined Classifier
+    '''
+    zipped_predicted_clean = list(zip(predicted_clean_subjects, predicted_clean_bodies, predicted_clean_urls))
+    zipped_predicted_spam = list(zip(predicted_spam_subjects, predicted_spam_bodies, predicted_spam_urls))
+
+    predicted_clean_combined = [make_spam_decision(entry1, entry2, entry3) for entry1, entry2, entry3 in zipped_predicted_clean]
     unique, counts = numpy.unique(predicted_clean_combined, return_counts=True)
     predicted_clean_combined_counts = dict(zip(unique, counts))
 
-    predicted_spam_combined = [make_spam_decision(entry1, entry2) for entry1, entry2 in zipped_predicted_spam]
+    predicted_spam_combined = [make_spam_decision(entry1, entry2, entry3) for entry1, entry2, entry3 in zipped_predicted_spam]
     unique, counts = numpy.unique(predicted_spam_combined, return_counts=True)
     predicted_spam_combined_counts = dict(zip(unique, counts))
 
-    generate_report(pre_processed_test_data, predicted_clean_combined_counts, predicted_spam_combined_counts, "combined")
+    generate_report(pre_processed_test_data, predicted_clean_combined_counts, predicted_spam_combined_counts,
+                    "combined")
 
 
-def make_spam_decision(entry1, entry2):
-    if entry1 == "spam" or entry2 == "spam":
+def make_spam_decision(entry1, entry2, entry3):
+    if entry1 == "spam" or entry2 == "spam" or entry3 == "spam":
         return "spam"
     return "clean"
 
@@ -327,8 +394,8 @@ def generate_report(pre_processed_test_data, predicted_clean_bodies_counts, pred
 
 
 if __name__ == '__main__':
-    train_data, test_data = load_data("../data/Lot1/Clean/", "../data/Lot1/Spam/")
+    train_data, test_data = load_data("../data/Lot2/Clean/", "../data/Lot2/Spam/")
 
-    subject_model, body_model = train_model(train_data)
+    subject_model, body_model, url_model = train_model(train_data)
 
-    test_model(test_data, subject_model, body_model)
+    test_model(test_data, subject_model, body_model, url_model)
