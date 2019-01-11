@@ -38,7 +38,7 @@ def load_data(clean_lot_path, spam_lot_path):
                     content = content_file.read()
                     data["clean"].append({"id": filename, "content": content})
             except:
-                print("Couldn't parse file " + filename)
+                print("Couldn't parse CLEAN file " + filename)
 
     for filename in os.listdir(spam_lot_path):
         with open(spam_lot_path + filename, 'r') as content_file:
@@ -55,10 +55,10 @@ def load_data(clean_lot_path, spam_lot_path):
                     content = content_file.read()
                     data["spam"].append({"id": filename, "content": content})
             except:
-                print("Couldn't parse file " + filename)
+                print("Couldn't parse SPAM file " + filename)
 
-    spam_limit_index = int(len(data["spam"]) * 0.75)
-    clean_limit_index = int(len(data["clean"]) * 0.75)
+    spam_limit_index = int(len(data["spam"]) * 0.8)
+    clean_limit_index = int(len(data["clean"]) * 0.8)
 
     train = {"spam": data["spam"][0:spam_limit_index], "clean": data["clean"][0:clean_limit_index]}
     test = {"spam": data["spam"][spam_limit_index:], "clean": data["clean"][clean_limit_index:]}
@@ -208,63 +208,127 @@ def train_model(train_data):
 
     Y = ["clean", "spam"]
 
-    model = Pipeline([
+    subject_model = Pipeline([
         ('vect', CountVectorizer(stop_words='english', lowercase=True)),  # pre_processing step
         ('tfidf', TfidfTransformer(use_idf=True, smooth_idf=True)),  # pre_processing step
         ('clf', MultinomialNB(alpha=1))  # prediction model
     ])
 
-    model.fit(subject_X, Y)
+    body_model = Pipeline([
+        ('vect', CountVectorizer(stop_words='english', lowercase=True)),  # pre_processing step
+        ('tfidf', TfidfTransformer(use_idf=True, smooth_idf=True)),  # pre_processing step
+        ('clf', MultinomialNB(alpha=1))  # prediction model
+    ])
 
-    return model
+    subject_model.fit(subject_X, Y)
+    body_model.fit(body_X, Y)
+
+    return subject_model, body_model
 
 
-def test_model(test_data, model):
+def test_model(test_data, subject_model, body_model):
     pre_processed_test_data = pre_process_data(test_data)
 
+    '''
+    Subject Classifier
+    '''
     clean_subjects = [" ".join(entry["subject"]) for entry in pre_processed_test_data["clean"]]
     spam_subjects = [" ".join(entry["subject"]) for entry in pre_processed_test_data["spam"]]
 
-    predicted_clean_subjects = model.predict(clean_subjects)
+    predicted_clean_subjects = subject_model.predict(clean_subjects)
     unique, counts = numpy.unique(predicted_clean_subjects, return_counts=True)
     predicted_clean_subjects_counts = dict(zip(unique, counts))
 
-    predicted_spam_subjects = model.predict(spam_subjects)
+    predicted_spam_subjects = subject_model.predict(spam_subjects)
     unique, counts = numpy.unique(predicted_spam_subjects, return_counts=True)
     predicted_spam_subjects_counts = dict(zip(unique, counts))
 
-    # true positives
-    TP = predicted_spam_subjects_counts["spam"]
-    # false positives
-    FP = predicted_clean_subjects_counts["spam"]
-    # true negatives
-    TN = predicted_clean_subjects_counts["clean"]
-    # false negatives
-    FN = predicted_spam_subjects_counts["clean"]
+    generate_report(pre_processed_test_data, predicted_clean_subjects_counts, predicted_spam_subjects_counts, "subject")
 
+    '''
+    Body Classifier
+    '''
+    clean_bodies = [" ".join(entry["body"]) for entry in pre_processed_test_data["clean"]]
+    spam_bodies = [" ".join(entry["body"]) for entry in pre_processed_test_data["spam"]]
+
+    predicted_clean_bodies = body_model.predict(clean_bodies)
+    unique, counts = numpy.unique(predicted_clean_bodies, return_counts=True)
+    predicted_clean_bodies_counts = dict(zip(unique, counts))
+
+    predicted_spam_bodies = body_model.predict(spam_bodies)
+    unique, counts = numpy.unique(predicted_spam_bodies, return_counts=True)
+    predicted_spam_bodies_counts = dict(zip(unique, counts))
+
+    generate_report(pre_processed_test_data, predicted_clean_bodies_counts, predicted_spam_bodies_counts, "body")
+
+    '''
+    Body and Subject combined Classifier
+    '''
+    zipped_predicted_clean = list(zip(predicted_clean_subjects, predicted_clean_bodies))
+    zipped_predicted_spam = list(zip(predicted_spam_subjects, predicted_spam_bodies))
+
+    predicted_clean_combined = [make_spam_decision(entry1, entry2) for entry1, entry2 in zipped_predicted_clean]
+    unique, counts = numpy.unique(predicted_clean_combined, return_counts=True)
+    predicted_clean_combined_counts = dict(zip(unique, counts))
+
+    predicted_spam_combined = [make_spam_decision(entry1, entry2) for entry1, entry2 in zipped_predicted_spam]
+    unique, counts = numpy.unique(predicted_spam_combined, return_counts=True)
+    predicted_spam_combined_counts = dict(zip(unique, counts))
+
+    generate_report(pre_processed_test_data, predicted_clean_combined_counts, predicted_spam_combined_counts, "combined")
+
+
+def make_spam_decision(entry1, entry2):
+    if entry1 == "spam" or entry2 == "spam":
+        return "spam"
+    return "clean"
+
+
+def generate_report(pre_processed_test_data, predicted_clean_bodies_counts, predicted_spam_bodies_counts, type):
+    # true positives
+    try:
+        TP = predicted_spam_bodies_counts["spam"]
+    except:
+        TP = 0
+    # false positives
+    try:
+        FP = predicted_clean_bodies_counts["spam"]
+    except:
+        FP = 0
+    # true negatives
+    try:
+        TN = predicted_clean_bodies_counts["clean"]
+    except:
+        TN = 0
+    # false negatives
+    try:
+        FN = predicted_spam_bodies_counts["clean"]
+    except:
+        FN = 0
+
+    # Scoring
     precision = TP / (TP + FP)
     recall = TP / (TP + FN)
+    F_2_score = 2 * (precision * recall) / (precision + recall)
 
     # Report generation:
+    print("====== Report based on the " + type + " classification model ======")
     print("Spams: " + str(len(pre_processed_test_data["spam"])))
     print("Clean: " + str(len(pre_processed_test_data["clean"])))
-
     print("-----------------")
-
     print("True positives: " + str(TP))
     print("False positives: " + str(FP))
     print("True negatives: " + str(TN))
     print("False negatives: " + str(FN))
-
     print("-----------------")
-
     print("Precision: " + str(precision))
     print("Recall: " + str(recall))
+    print("F-score: " + str(F_2_score))
 
 
 if __name__ == '__main__':
-    train_data, test_data = load_data("../data/Lot2/Clean/", "../data/Lot2/Spam/")
+    train_data, test_data = load_data("../data/Lot1/Clean/", "../data/Lot1/Spam/")
 
-    model = train_model(train_data)
+    subject_model, body_model = train_model(train_data)
 
-    test_model(test_data, model)
+    test_model(test_data, subject_model, body_model)
