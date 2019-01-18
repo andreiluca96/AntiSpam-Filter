@@ -1,6 +1,8 @@
 import os
+import pickle
 import re
 import string
+from urllib.parse import urlparse
 
 import chardet
 import nltk
@@ -188,16 +190,26 @@ def pre_process_data(data):
                                 "id": x["id"],
                                 "subject": x["subject"],
                                 "body": x["body"],
-                                "urls": [" ".join(get_URL_tokens(y)) for y in x["urls"]]
+                                "urls": get_urls_domains(x)
                             }, data["spam"]))
     data["clean"] = list(map(lambda x:
                              {
                                  "id": x["id"],
                                  "subject": x["subject"],
                                  "body": x["body"],
-                                 "urls": [" ".join(get_URL_tokens(y)) for y in x["urls"]]
+                                 "urls": get_urls_domains(x)
                              }, data["clean"]))
+
     return data
+
+
+def get_urls_domains(x):
+    try:
+        return " ".join([" ".join(urlparse(y).netloc.split(".")) for y in x["urls"]]).replace("com", "").replace("www",
+                                                                                                                 ""),
+    except:
+        print("Couldn't parse URL domain " + str(x))
+        return ""
 
 
 def get_HTML_from_body(x):
@@ -270,10 +282,10 @@ def train_model(train_data):
     body_model.fit(body_X, Y)
     url_model.fit(url_X, Y)
 
-    return subject_model, body_model
+    return subject_model, body_model, url_model
 
 
-def test_model(test_data, subject_model, body_model):
+def test_model(test_data, subject_model, body_model, url_model):
     pre_processed_test_data = pre_process_data(test_data)
 
     '''
@@ -330,11 +342,13 @@ def test_model(test_data, subject_model, body_model):
     zipped_predicted_clean = list(zip(predicted_clean_subjects, predicted_clean_bodies, predicted_clean_urls))
     zipped_predicted_spam = list(zip(predicted_spam_subjects, predicted_spam_bodies, predicted_spam_urls))
 
-    predicted_clean_combined = [make_spam_decision(entry1, entry2, entry3) for entry1, entry2, entry3 in zipped_predicted_clean]
+    predicted_clean_combined = [make_spam_decision(entry1, entry2, entry3) for entry1, entry2, entry3 in
+                                zipped_predicted_clean]
     unique, counts = numpy.unique(predicted_clean_combined, return_counts=True)
     predicted_clean_combined_counts = dict(zip(unique, counts))
 
-    predicted_spam_combined = [make_spam_decision(entry1, entry2, entry3) for entry1, entry2, entry3 in zipped_predicted_spam]
+    predicted_spam_combined = [make_spam_decision(entry1, entry2, entry3) for entry1, entry2, entry3 in
+                               zipped_predicted_spam]
     unique, counts = numpy.unique(predicted_spam_combined, return_counts=True)
     predicted_spam_combined_counts = dict(zip(unique, counts))
 
@@ -394,6 +408,23 @@ if __name__ == '__main__':
     train_data, test_data = load_data(["../data/Lot2/Clean/", "../data/Lot1/Clean/"],
                                       ["../data/Lot2/Spam/", "../data/Lot1/Spam/"])
 
-    subject_model, body_model = train_model(train_data)
+    # train_data, test_data = load_data(["../data/Lot1-truncated/Clean/"],
+    #                                   ["../data/Lot1-truncated/Spam/"])
 
-    test_model(test_data, subject_model, body_model)
+    subject_model, body_model, url_model = train_model(train_data)
+
+    test_model(test_data, subject_model, body_model, url_model)
+
+    subject_model_serialized = pickle.dumps(subject_model)
+    body_model_serialized = pickle.dumps(body_model)
+
+    subject_file = open("subject.model", "wb")
+    subject_file.write(subject_model_serialized)
+    subject_file.close()
+
+    body_file = open("body.model", "wb")
+    body_file.write(body_model_serialized)
+    body_file.close()
+
+    print("Finished the model writing...")
+
